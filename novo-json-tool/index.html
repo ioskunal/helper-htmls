@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JSON Inspector</title>
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Apply theme before first paint to avoid flash
+    (function() {
+      var t = localStorage.getItem('novo-json-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <span class="logo-icon">{&nbsp;}</span>
+      <h1>Novo | JSON Inspector</h1>
+    </div>
+    <div class="header-right">
+      <nav class="tabs">
+        <button class="tab active" data-tab="format">Format</button>
+        <button class="tab" data-tab="compare">Compare</button>
+      </nav>
+      <button id="theme-toggle" class="theme-toggle" title="Toggle theme">
+        <span class="icon-moon">&#9789;</span>
+        <span class="icon-sun">&#9788;</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- FORMAT TAB -->
+    <section id="format" class="tab-content active">
+      <div class="format-input-panel">
+        <div class="panel-header">
+          <h2>Input JSON</h2>
+          <div class="actions">
+            <button id="paste-btn" class="btn btn-sm">Paste</button>
+            <button id="sample-btn" class="btn btn-sm">Sample</button>
+            <button id="clear-btn" class="btn btn-sm">Clear</button>
+          </div>
+        </div>
+        <textarea id="json-input" placeholder="Paste or type your JSON (// and /* */ comments allowed)..." spellcheck="false"></textarea>
+        <div class="format-controls">
+          <button id="format-btn" class="btn btn-primary">Format JSON</button>
+          <button id="minify-btn" class="btn btn-secondary">Minify</button>
+          <span id="cursor-pos" class="cursor-pos">Ln 1, Col 1</span>
+          <label class="indent-label">
+            Indent:
+            <select id="indent-size">
+              <option value="2" selected>2 spaces</option>
+              <option value="4">4 spaces</option>
+              <option value="tab">Tab</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div class="format-output-panel">
+        <div class="panel-header">
+          <h2>Formatted Output</h2>
+          <div class="actions">
+            <button id="copy-btn" class="btn btn-sm">Copy</button>
+            <button id="expand-all-btn" class="btn btn-sm">Expand All</button>
+            <button id="collapse-all-btn" class="btn btn-sm">Collapse All</button>
+          </div>
+        </div>
+        <div id="json-output" class="output-area"></div>
+      </div>
+    </section>
+
+    <!-- COMPARE TAB -->
+    <section id="compare" class="tab-content">
+      <div class="compare-controls">
+        <button id="compare-btn" class="btn btn-primary">Compare</button>
+        <button id="swap-btn" class="btn btn-secondary">Swap</button>
+        <button id="clear-compare-btn" class="btn btn-secondary">Clear</button>
+      </div>
+      <div class="compare-panels">
+        <div class="compare-panel">
+          <div class="panel-header">
+            <h2>JSON A</h2>
+            <button class="btn btn-sm compare-paste-btn" data-target="json-a">Paste</button>
+          </div>
+          <textarea id="json-a" placeholder="Paste first JSON here..." spellcheck="false"></textarea>
+        </div>
+        <div class="compare-panel">
+          <div class="panel-header">
+            <h2>JSON B</h2>
+            <button class="btn btn-sm compare-paste-btn" data-target="json-b">Paste</button>
+          </div>
+          <textarea id="json-b" placeholder="Paste second JSON here..." spellcheck="false"></textarea>
+        </div>
+      </div>
+      <div id="diff-output" class="diff-output"></div>
+    </section>
+  </main>
+
+  <footer>
+    <span>JSON Inspector &mdash; Format &amp; Compare</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
