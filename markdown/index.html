@@ -160,6 +160,12 @@
     border-right: 1px solid var(--border);
   }
 
+  .panel.drag-over,
+  .editor-panel.drag-over {
+    outline: 2px dashed var(--link);
+    outline-offset: -4px;
+  }
+
   #editor {
     flex: 1;
     width: 100%;
@@ -423,6 +429,11 @@
       <svg id="theme-icon-dark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" style="display:none"><path d="M9.598 1.591a.749.749 0 0 1 .785-.175 7.001 7.001 0 1 1-8.967 8.967.75.75 0 0 1 .961-.96 5.5 5.5 0 0 0 7.22-7.832Z"/></svg>
       <span>Dark mode</span>
     </button>
+    <button onclick="openFile()" title="Open a markdown file from your computer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Zm0 1.5h3.25a.25.25 0 0 1 .2.1l.9 1.2c.33.44.85.7 1.4.7h6.75a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25H1.75a.25.25 0 0 1-.25-.25V2.75a.25.25 0 0 1 .25-.25Z"/></svg>
+      <span>Open</span>
+    </button>
+    <input type="file" id="file-input" accept=".md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain" style="display:none">
     <button onclick="resetEditor()" title="Clear editor">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M5.03 3.97a.75.75 0 0 1 1.06 0L8 5.94l1.91-1.97a.75.75 0 1 1 1.08 1.04L9.06 7l1.94 1.97a.75.75 0 0 1-1.08 1.04L8 8.06 6.09 10.03a.75.75 0 1 1-1.06-1.06L6.94 7 5.03 5.03a.75.75 0 0 1 0-1.06Z"/><path d="M1.5 2.75a.25.25 0 0 1 .25-.25h12.5a.25.25 0 0 1 .25.25v10.5a.25.25 0 0 1-.25.25H1.75a.25.25 0 0 1-.25-.25Zm.25-1.75A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25V2.75A1.75 1.75 0 0 0 14.25 1Z"/></svg>
       <span>Reset</span>
@@ -460,6 +471,9 @@ const iconDark = document.getElementById('theme-icon-dark');
 const hljsLight = document.getElementById('hljs-light');
 const hljsDark = document.getElementById('hljs-dark');
 const toastEl = document.getElementById('toast');
+const fileInput = document.getElementById('file-input');
+const editorPanel = document.querySelector('.editor-panel');
+const previewPanel = preview.closest('.panel');
 
 // Configure marked
 marked.setOptions({
@@ -541,9 +555,178 @@ async function copyMarkdown() {
   }
 }
 
-// Export PDF
+// Open a markdown file from disk
+function openFile() {
+  fileInput.click();
+}
+
+fileInput.addEventListener('change', function() {
+  const file = this.files && this.files[0];
+  if (file) loadFile(file);
+  this.value = ''; // reset so picking the same file again re-fires change
+});
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = function() {
+    editor.value = String(reader.result);
+    render();
+    editor.scrollTop = 0;
+    preview.scrollTop = 0;
+    showToast('Loaded ' + file.name);
+  };
+  reader.onerror = function() { showToast('Could not read file'); };
+  reader.readAsText(file);
+}
+
+// Drag & drop a file onto either panel
+function isFileDrag(e) {
+  return e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+}
+// Stop the browser from navigating away if a file is dropped off-target
+['dragover', 'drop'].forEach(function(evt) {
+  window.addEventListener(evt, function(e) { if (isFileDrag(e)) e.preventDefault(); });
+});
+[editorPanel, previewPanel].forEach(function(zone) {
+  zone.addEventListener('dragover', function(e) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    zone.classList.add('drag-over');
+  });
+  zone.addEventListener('dragleave', function() { zone.classList.remove('drag-over'); });
+  zone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+});
+
+// Derive a document title from the first heading (used as the suggested
+// PDF filename in the print dialog), falling back to a default.
+function getDocTitle() {
+  const h = preview.querySelector('h1, h2');
+  const text = h && h.textContent.trim();
+  if (text) return text.slice(0, 80).replace(/[\\/:*?"<>|]+/g, '-').trim();
+  return 'document';
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Self-contained stylesheet for the print document. Native print renders real
+// text (crisp, selectable, correctly spaced) and paginates automatically —
+// unlike a canvas rasterizer. Long code lines and wide tables are forced to
+// wrap so nothing is clipped off the right edge of the page.
+const PRINT_STYLES = `
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    color: #1f2328; background: #fff; line-height: 1.6;
+    margin: 0; padding: 0; -webkit-font-smoothing: antialiased;
+  }
+  .markdown-body { max-width: 100%; }
+  h1, h2, h3, h4, h5, h6 { margin: 24px 0 16px; font-weight: 600; line-height: 1.25; page-break-after: avoid; }
+  h1 { font-size: 1.9em; padding-bottom: 0.3em; border-bottom: 1px solid #d0d7de; }
+  h2 { font-size: 1.45em; padding-bottom: 0.3em; border-bottom: 1px solid #d0d7de; }
+  h3 { font-size: 1.2em; } h4 { font-size: 1em; }
+  p { margin: 0 0 12px; }
+  a { color: #0969da; text-decoration: none; }
+  strong { font-weight: 600; }
+  ul, ol { padding-left: 2em; margin: 0 0 12px; }
+  li { margin-bottom: 4px; }
+  blockquote { margin: 0 0 16px; padding: 0 1em; color: #656d76; border-left: 0.25em solid #d0d7de; }
+  code {
+    padding: 0.2em 0.4em; font-size: 85%; background: #eff1f3; border-radius: 6px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    overflow-wrap: anywhere; word-break: break-word;
+  }
+  pre {
+    margin: 0 0 16px; padding: 12px 14px; background: #f6f8fa; border: 1px solid #d0d7de;
+    border-radius: 6px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word;
+    page-break-inside: avoid;
+  }
+  pre code { padding: 0; background: transparent; font-size: 85%; white-space: pre-wrap; }
+  table {
+    border-collapse: collapse; width: 100%; margin: 0 0 16px;
+    table-layout: fixed; page-break-inside: auto;
+  }
+  th, td {
+    padding: 6px 10px; border: 1px solid #d0d7de; text-align: left;
+    vertical-align: top; overflow-wrap: anywhere; word-break: break-word;
+  }
+  th { font-weight: 600; background: #f6f8fa; }
+  tr { page-break-inside: avoid; }
+  tr:nth-child(even) { background: #f6f8fa; }
+  hr { height: 1px; border: 0; background: #d0d7de; margin: 24px 0; }
+  img { max-width: 100%; height: auto; }
+  ul.contains-task-list { list-style: none; padding-left: 0; }
+  .task-list-item { position: relative; padding-left: 1.6em; }
+  .task-list-item input[type="checkbox"] { position: absolute; left: 0; top: 0.3em; margin: 0; }
+  @page { margin: 1.5cm; }
+`;
+
+// Export PDF via the browser's native print engine, using a hidden iframe so
+// no new tab/window opens. The print dialog appears over the current page;
+// choose "Save as PDF" as the destination. Margins come from the @page rule
+// (keep the dialog's "Margins" setting on Default).
 function exportPDF() {
-  window.print();
+  if (!editor.value.trim()) { showToast('Nothing to export'); return; }
+  render();
+
+  const title = getDocTitle();
+  const hljsHref = 'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css';
+
+  // Remove any leftover print frame from a previous export
+  const prev = document.getElementById('print-frame');
+  if (prev) prev.remove();
+
+  const iframe = document.createElement('iframe');
+  iframe.id = 'print-frame';
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(
+    '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+    '<title>' + escapeHtml(title) + '</title>' +
+    '<link rel="stylesheet" href="' + hljsHref + '">' +
+    '<style>' + PRINT_STYLES + '</style></head>' +
+    '<body><article class="markdown-body">' + preview.innerHTML + '</article></body></html>'
+  );
+  doc.close();
+
+  // The Save-as-PDF dialog suggests a filename from the top document's title,
+  // so set it temporarily and restore afterward.
+  const originalTitle = document.title;
+  const cleanup = function() {
+    document.title = originalTitle;
+    const f = document.getElementById('print-frame');
+    if (f) f.remove();
+  };
+
+  let printed = false;
+  const triggerPrint = function() {
+    if (printed) return;
+    printed = true;
+    document.title = title;
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+    // afterprint isn't guaranteed everywhere — clean up on a delay too
+    setTimeout(cleanup, 1000);
+  };
+  iframe.contentWindow.onafterprint = cleanup;
+
+  const link = doc.querySelector('link[rel="stylesheet"]');
+  if (link) {
+    link.addEventListener('load', triggerPrint);
+    link.addEventListener('error', triggerPrint);
+  }
+  // Fallback if the stylesheet load/error never fires (cached/offline)
+  setTimeout(triggerPrint, 700);
 }
 
 // Toast
