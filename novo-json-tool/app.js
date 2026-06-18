@@ -75,61 +75,6 @@
     toastTimer = setTimeout(() => toast.classList.remove('visible'), 3500);
   }
 
-  // ── Strip // and /* */ comments while respecting string literals.
-  // Newlines inside block comments are preserved so JSON.parse error line
-  // numbers still line up with the user's original input.
-  function stripJsonComments(str) {
-    let out = '';
-    let i = 0;
-    const n = str.length;
-    let inString = false;
-    while (i < n) {
-      const ch = str[i];
-      const next = str[i + 1];
-
-      if (inString) {
-        out += ch;
-        if (ch === '\\' && i + 1 < n) {
-          out += str[i + 1];
-          i += 2;
-          continue;
-        }
-        if (ch === '"') inString = false;
-        i++;
-        continue;
-      }
-
-      if (ch === '"') {
-        inString = true;
-        out += ch;
-        i++;
-        continue;
-      }
-
-      // Line comment: //...\n
-      if (ch === '/' && next === '/') {
-        i += 2;
-        while (i < n && str[i] !== '\n') i++;
-        continue;
-      }
-
-      // Block comment: /* ... */
-      if (ch === '/' && next === '*') {
-        i += 2;
-        while (i < n && !(str[i] === '*' && str[i + 1] === '/')) {
-          if (str[i] === '\n') out += '\n';
-          i++;
-        }
-        i += 2;
-        continue;
-      }
-
-      out += ch;
-      i++;
-    }
-    return out;
-  }
-
   // ── Parse JSON safely ─────────────────────────────
   function tryParse(str, label) {
     const trimmed = str.trim();
@@ -138,7 +83,7 @@
       return null;
     }
     try {
-      return JSON.parse(stripJsonComments(trimmed));
+      return JSON.parse(trimmed);
     } catch (e) {
       showError(label ? `${label}: ${e.message}` : e.message);
       return null;
@@ -336,22 +281,6 @@
     });
     updateLineVisibility();
   });
-
-  // ── Cursor position tracking (Ln/Col) ─────────────
-  const cursorPos = $('#cursor-pos');
-
-  function updateCursorPos() {
-    const upto = jsonInput.value.substring(0, jsonInput.selectionStart);
-    const newlineIdx = upto.lastIndexOf('\n');
-    const line = (upto.match(/\n/g) || []).length + 1;
-    const col = upto.length - (newlineIdx + 1) + 1;
-    cursorPos.textContent = `Ln ${line}, Col ${col}`;
-  }
-
-  ['keyup', 'mouseup', 'input', 'focus', 'select', 'click'].forEach((evt) => {
-    jsonInput.addEventListener(evt, updateCursorPos);
-  });
-  updateCursorPos();
 
   // Keyboard shortcut: Ctrl/Cmd + Enter to format
   jsonInput.addEventListener('keydown', (e) => {
@@ -672,6 +601,68 @@
       }
     });
   });
+
+  // ── Drag & drop .json files ───────────────────────
+  // Without this, dropping a file anywhere on the page makes the browser
+  // navigate away to open it — which is why a drop that misses the textarea
+  // looked like "nothing happened". Swallow drops outside our drop zones.
+  function isFileDrag(e) {
+    return e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+  }
+  window.addEventListener('dragover', (e) => {
+    if (isFileDrag(e)) e.preventDefault();
+  });
+  window.addEventListener('drop', (e) => {
+    if (isFileDrag(e)) e.preventDefault();
+  });
+
+  function readJsonFile(file, onText) {
+    if (!file) return;
+    const isJson = /\.json$/i.test(file.name) ||
+      file.type === 'application/json';
+    if (!isJson) {
+      showError('Please drop a .json file');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => onText(String(reader.result));
+    reader.onerror = () => showError('Could not read file');
+    reader.readAsText(file);
+  }
+
+  // The whole panel is the drop target (not just the textarea), so a near-miss
+  // still works. A depth counter keeps the highlight steady while the cursor
+  // moves over the panel's child elements.
+  function enableFileDrop(zone, textarea, onLoaded) {
+    let depth = 0;
+    zone.addEventListener('dragenter', (e) => {
+      if (!isFileDrag(e)) return;
+      depth++;
+      textarea.classList.add('drag-over');
+    });
+    zone.addEventListener('dragover', (e) => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    zone.addEventListener('dragleave', () => {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) textarea.classList.remove('drag-over');
+    });
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      depth = 0;
+      textarea.classList.remove('drag-over');
+      readJsonFile(e.dataTransfer.files && e.dataTransfer.files[0], (text) => {
+        textarea.value = text;
+        if (onLoaded) onLoaded();
+      });
+    });
+  }
+
+  enableFileDrop($('.format-input-panel'), jsonInput, formatJSON);
+  enableFileDrop(jsonA.closest('.compare-panel'), jsonA);
+  enableFileDrop(jsonB.closest('.compare-panel'), jsonB);
 
   // ── Sample data ───────────────────────────────────
   const SAMPLE_JSON = {

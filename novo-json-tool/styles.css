@@ -196,6 +196,12 @@ textarea {
 
 textarea::placeholder { color: var(--text-muted); opacity: 0.5; }
 
+textarea.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 .format-controls {
   display: flex;
   align-items: center;
@@ -205,20 +211,8 @@ textarea::placeholder { color: var(--text-muted); opacity: 0.5; }
   background: var(--surface2);
 }
 
-.cursor-pos {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-muted);
-  padding: 4px 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  user-select: none;
-  white-space: nowrap;
-}
-
 .indent-label {
+  margin-left: auto;
   font-size: 13px;
   color: var(--text-muted);
   display: flex;
