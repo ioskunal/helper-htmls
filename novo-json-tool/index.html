@@ -74,6 +74,10 @@
     <!-- COMPARE TAB -->
     <section id="compare" class="tab-content">
       <div class="compare-controls">
+        <div class="compare-mode-toggle" role="tablist" aria-label="Comparison mode">
+          <button class="mode-btn active" data-mode="json">JSON</button>
+          <button class="mode-btn" data-mode="text">Text</button>
+        </div>
         <button id="compare-btn" class="btn btn-primary">Compare</button>
         <button id="swap-btn" class="btn btn-secondary">Swap</button>
         <button id="clear-compare-btn" class="btn btn-secondary">Clear</button>
@@ -81,14 +85,14 @@
       <div class="compare-panels">
         <div class="compare-panel">
           <div class="panel-header">
-            <h2>JSON A</h2>
+            <h2 id="label-a">JSON A</h2>
             <button class="btn btn-sm compare-paste-btn" data-target="json-a">Paste</button>
           </div>
           <textarea id="json-a" placeholder="Paste first JSON here..." spellcheck="false"></textarea>
         </div>
         <div class="compare-panel">
           <div class="panel-header">
-            <h2>JSON B</h2>
+            <h2 id="label-b">JSON B</h2>
             <button class="btn btn-sm compare-paste-btn" data-target="json-b">Paste</button>
           </div>
           <textarea id="json-b" placeholder="Paste second JSON here..." spellcheck="false"></textarea>

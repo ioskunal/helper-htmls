@@ -356,6 +356,36 @@ textarea.drag-over {
 .compare-controls {
   display: flex;
   gap: 10px;
+  align-items: center;
+}
+
+/* Segmented JSON / Text mode toggle */
+.compare-mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--surface2);
+  padding: 4px;
+  border-radius: var(--radius);
+  margin-right: auto;
+}
+
+.mode-btn {
+  padding: 7px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.mode-btn:hover { color: var(--text); }
+
+.mode-btn.active {
+  background: var(--primary);
+  color: #fffffe;
 }
 
 .compare-panels {
@@ -495,6 +525,19 @@ textarea.drag-over {
 
 .diff-line.blank {
   background: var(--blank-line-bg);
+}
+
+/* Inline word-level highlights inside a changed text line */
+.diff-inline-del {
+  background: var(--diff-remove-text);
+  color: #fffffe;
+  border-radius: 2px;
+}
+
+.diff-inline-ins {
+  background: var(--diff-add-text);
+  color: #fffffe;
+  border-radius: 2px;
 }
 
 .line-num {

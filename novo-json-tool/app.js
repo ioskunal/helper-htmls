@@ -28,6 +28,9 @@
   const swapBtn = $('#swap-btn');
   const clearCompareBtn = $('#clear-compare-btn');
   const diffOutput = $('#diff-output');
+  const modeBtns = document.querySelectorAll('.mode-btn');
+  const labelA = $('#label-a');
+  const labelB = $('#label-b');
 
   // ── Theme toggle ──────────────────────────────────
   const themeToggle = $('#theme-toggle');
@@ -500,21 +503,16 @@
     return counts;
   }
 
-  function compareJSON() {
-    const a = tryParse(jsonA.value, 'JSON A');
-    if (a === null) return;
-    const b = tryParse(jsonB.value, 'JSON B');
-    if (b === null) return;
-
-    const diff = computeDiff(a, b);
-    const { left, right } = renderDiffTree(diff, 0, null, true);
-    const counts = countDiffs(diff);
+  // Render two aligned line arrays into the side-by-side diff panels.
+  // opts: { labelA, labelB, counts, identicalMsg }
+  function renderSideBySide(left, right, opts) {
+    const counts = opts.counts;
     const totalDiffs = counts.added + counts.removed + counts.changed;
 
     // Build header
     let html = '<div class="diff-header"><div class="diff-stat">';
     if (totalDiffs === 0) {
-      html += '<span style="color: var(--success)">JSONs are identical</span>';
+      html += '<span style="color: var(--success)">' + opts.identicalMsg + '</span>';
     } else {
       if (counts.added) html += '<span class="diff-stat-added">+' + counts.added + ' added</span>';
       if (counts.removed) html += '<span class="diff-stat-removed">-' + counts.removed + ' removed</span>';
@@ -525,32 +523,23 @@
     // Side-by-side panels
     html += '<div class="diff-side-by-side">';
 
-    // Left panel (JSON A)
-    html += '<div class="diff-panel-side"><div class="diff-panel-label">JSON A</div>';
-    html += '<div class="diff-panel-body" id="diff-left">';
-    let leftNum = 0;
-    left.forEach((line) => {
-      const num = line.type !== 'blank' ? ++leftNum : '';
-      html += '<div class="diff-line ' + line.type + '">';
-      html += '<span class="line-num">' + num + '</span>';
-      html += '<span class="line-content">' + (line.html || '&nbsp;') + '</span>';
-      html += '</div>';
-    });
-    html += '</div></div>';
+    function renderPanel(lines, label, id) {
+      let panel = '<div class="diff-panel-side"><div class="diff-panel-label">' + label + '</div>';
+      panel += '<div class="diff-panel-body" id="' + id + '">';
+      let num = 0;
+      lines.forEach((line) => {
+        const n = line.type !== 'blank' ? ++num : '';
+        panel += '<div class="diff-line ' + line.type + '">';
+        panel += '<span class="line-num">' + n + '</span>';
+        panel += '<span class="line-content">' + (line.html || '&nbsp;') + '</span>';
+        panel += '</div>';
+      });
+      panel += '</div></div>';
+      return panel;
+    }
 
-    // Right panel (JSON B)
-    html += '<div class="diff-panel-side"><div class="diff-panel-label">JSON B</div>';
-    html += '<div class="diff-panel-body" id="diff-right">';
-    let rightNum = 0;
-    right.forEach((line) => {
-      const num = line.type !== 'blank' ? ++rightNum : '';
-      html += '<div class="diff-line ' + line.type + '">';
-      html += '<span class="line-num">' + num + '</span>';
-      html += '<span class="line-content">' + (line.html || '&nbsp;') + '</span>';
-      html += '</div>';
-    });
-    html += '</div></div>';
-
+    html += renderPanel(left, opts.labelA, 'diff-left');
+    html += renderPanel(right, opts.labelB, 'diff-right');
     html += '</div>';
     diffOutput.innerHTML = html;
 
@@ -576,8 +565,168 @@
     }
   }
 
+  function compareJSON() {
+    const a = tryParse(jsonA.value, 'JSON A');
+    if (a === null) return;
+    const b = tryParse(jsonB.value, 'JSON B');
+    if (b === null) return;
+
+    const diff = computeDiff(a, b);
+    const { left, right } = renderDiffTree(diff, 0, null, true);
+    renderSideBySide(left, right, {
+      labelA: 'JSON A',
+      labelB: 'JSON B',
+      counts: countDiffs(diff),
+      identicalMsg: 'JSONs are identical'
+    });
+  }
+
+  // ══════════════════════════════════════════════════
+  //  TEXT COMPARISON (line-by-line diff, à la diffchecker)
+  // ══════════════════════════════════════════════════
+
+  // Longest-common-subsequence over two token arrays → list of ops.
+  // Each op: { type: 'equal'|'del'|'ins', a?: token, b?: token }
+  function lcsDiff(aTokens, bTokens) {
+    const n = aTokens.length;
+    const m = bTokens.length;
+    // dp[i][j] = LCS length of aTokens[i..] and bTokens[j..]
+    const dp = [];
+    for (let i = 0; i <= n; i++) dp.push(new Uint32Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        dp[i][j] = aTokens[i] === bTokens[j]
+          ? dp[i + 1][j + 1] + 1
+          : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    const ops = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (aTokens[i] === bTokens[j]) {
+        ops.push({ type: 'equal', a: aTokens[i], b: bTokens[j] });
+        i++; j++;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+        ops.push({ type: 'del', a: aTokens[i] });
+        i++;
+      } else {
+        ops.push({ type: 'ins', b: bTokens[j] });
+        j++;
+      }
+    }
+    while (i < n) ops.push({ type: 'del', a: aTokens[i++] });
+    while (j < m) ops.push({ type: 'ins', b: bTokens[j++] });
+    return ops;
+  }
+
+  // Word/whitespace-level inline highlight for a changed line pair.
+  // Returns { left, right } HTML strings with differing runs wrapped.
+  function inlineDiff(oldLine, newLine) {
+    const split = (s) => s.match(/\s+|\S+/g) || [];
+    const ops = lcsDiff(split(oldLine), split(newLine));
+    let left = '', right = '';
+    ops.forEach((op) => {
+      if (op.type === 'equal') {
+        left += escapeHtml(op.a);
+        right += escapeHtml(op.b);
+      } else if (op.type === 'del') {
+        left += '<span class="diff-inline-del">' + escapeHtml(op.a) + '</span>';
+      } else {
+        right += '<span class="diff-inline-ins">' + escapeHtml(op.b) + '</span>';
+      }
+    });
+    return { left: left || '&nbsp;', right: right || '&nbsp;' };
+  }
+
+  function compareText() {
+    const aRaw = jsonA.value;
+    const bRaw = jsonB.value;
+    if (!aRaw.trim() && !bRaw.trim()) {
+      showError('Both inputs are empty');
+      return;
+    }
+
+    const aLines = aRaw.split('\n');
+    const bLines = bRaw.split('\n');
+    const ops = lcsDiff(aLines, bLines);
+
+    const left = [];
+    const right = [];
+    const counts = { added: 0, removed: 0, changed: 0 };
+
+    // Walk ops, pairing runs of deletions with following insertions so they
+    // line up on the same rows and get inline word-level highlighting.
+    for (let k = 0; k < ops.length; k++) {
+      const op = ops[k];
+      if (op.type === 'equal') {
+        const h = escapeHtml(op.a) || '&nbsp;';
+        left.push({ html: h, type: 'normal' });
+        right.push({ html: h, type: 'normal' });
+        continue;
+      }
+
+      // Gather a contiguous block of del/ins ops.
+      const dels = [];
+      const ins = [];
+      while (k < ops.length && ops[k].type !== 'equal') {
+        if (ops[k].type === 'del') dels.push(ops[k].a);
+        else ins.push(ops[k].b);
+        k++;
+      }
+      k--; // for-loop will advance past the block
+
+      const paired = Math.min(dels.length, ins.length);
+      for (let p = 0; p < paired; p++) {
+        const inl = inlineDiff(dels[p], ins[p]);
+        left.push({ html: inl.left, type: 'changed' });
+        right.push({ html: inl.right, type: 'changed' });
+        counts.changed++;
+      }
+      for (let p = paired; p < dels.length; p++) {
+        left.push({ html: escapeHtml(dels[p]) || '&nbsp;', type: 'removed' });
+        right.push({ html: '', type: 'blank' });
+        counts.removed++;
+      }
+      for (let p = paired; p < ins.length; p++) {
+        left.push({ html: '', type: 'blank' });
+        right.push({ html: escapeHtml(ins[p]) || '&nbsp;', type: 'added' });
+        counts.added++;
+      }
+    }
+
+    renderSideBySide(left, right, {
+      labelA: 'Text A',
+      labelB: 'Text B',
+      counts,
+      identicalMsg: 'Texts are identical'
+    });
+  }
+
+  // ── Compare mode toggle ───────────────────────────
+  let compareMode = 'json';
+
+  function setCompareMode(mode) {
+    compareMode = mode;
+    modeBtns.forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+    const isJson = mode === 'json';
+    labelA.textContent = isJson ? 'JSON A' : 'Text A';
+    labelB.textContent = isJson ? 'JSON B' : 'Text B';
+    jsonA.placeholder = isJson ? 'Paste first JSON here...' : 'Paste first text here...';
+    jsonB.placeholder = isJson ? 'Paste second JSON here...' : 'Paste second text here...';
+    diffOutput.innerHTML = '';
+  }
+
+  modeBtns.forEach((btn) => {
+    btn.addEventListener('click', () => setCompareMode(btn.dataset.mode));
+  });
+
+  function runCompare() {
+    if (compareMode === 'text') compareText();
+    else compareJSON();
+  }
+
   // ── Compare tab event listeners ───────────────────
-  compareBtn.addEventListener('click', compareJSON);
+  compareBtn.addEventListener('click', runCompare);
 
   swapBtn.addEventListener('click', () => {
     const temp = jsonA.value;
